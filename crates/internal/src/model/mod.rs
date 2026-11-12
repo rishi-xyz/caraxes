@@ -33,7 +33,7 @@ impl ModelConfig {
 pub async fn llm_call(prompt: &str) -> Result<String> {
     let config = ModelConfig::from_env();
     
-    let api_key = env::var("API_KEY").map_err(|_| MissingApiKey(format!("API key")))?;
+    let api_key = env::var("API_KEY").map_err(|err| MissingApiKey(format!("API key :{err}")))?;
     
     let auth_value = HeaderValue::from_str(&format!("Bearer {api_key}"))
         .map_err(|err| Config(format!("invalid api key: {err}")))?;
