@@ -1,6 +1,9 @@
+use std::io::Write;
+
 use clap::Parser;
 use crate::cli::{CLI, Commands};
-use caraxes_internal::{model::{self, provider::ModelRequest}, types::{Message, Role::User}};
+use futures::StreamExt;
+use caraxes_internal::{model::{self, provider::{ModelRequest, StreamEvent}}, types::{Message, Role::User}};
 
 mod cli;
 
@@ -28,8 +31,19 @@ async fn run(cli:CLI) -> caraxes_internal::error::Result<()> {
                 messages: vec![Message::new(User, query)],
             };
 
-            let response = provider.complete(request).await?;
-            println!("{}", response.content.unwrap_or_default());
+            let mut stream = provider.stream(request).await?;
+
+            while let Some(event) = stream.next().await {
+                match event?{
+                    StreamEvent::Token(token) => {
+                        print!("{token}");
+                        std::io::stdout().flush().ok();
+                    }
+                    StreamEvent::Done { usage, finish_reason } => {
+                        println!("");
+                    }
+                }
+            }
             Ok(())
         }
     }

@@ -123,6 +123,7 @@ dependencies = [
  "caraxes_internal",
  "clap",
  "dotenvy",
+ "futures",
  "tokio",
 ]
 
@@ -131,6 +132,7 @@ name = "caraxes_internal"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "bytes",
  "futures",
  "reqwest",
  "serde",
