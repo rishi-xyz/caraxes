@@ -1,7 +1,8 @@
+//! Creating some generic and common error types and instances
+
 use thiserror::Error; 
 
 
-// Creating some generic and common error types and instances
 
 /// Errors produced by the Caraxes internal core
 #[derive(Debug, Error, )]

@@ -1,3 +1,8 @@
+//! Provider neutral domain types
+//! 
+//! Nothing in this mod wll know about a specific proviuder wire format like openai compactible
+//! Provider adapters translate between these types and thier own json shape / format  
+
 use serde::{
     Deserialize,
     Serialize
@@ -18,68 +23,61 @@ pub enum Role {
     Tool,
 }
 
-/// # ChatMessages
+/// # Messages
 /// 
 /// A single message sent to the model
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ChatMessages {
+pub struct Message {
     role: Role,
     content: String,
 }
 
 
-impl ChatMessages {
+impl Message {
     /// creating a new chat message
     pub fn new(role: Role, content: impl Into<String>) -> Self {
-        ChatMessages { 
+        Message { 
             role, 
             content: content.into() 
         }
     }
 }
 
-/// # ChatRequest
+/// # Usage
 /// 
-/// The request body for an OpenAI-compatible chat completion
-/// 
-/// messages should contain all the previous messages as well 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ChatRequest {
-    pub model: String,
-    pub messages: Vec<ChatMessages>,
+/// Token accounting reported by a provider
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct Usage {
+    prompt_tokens: u32,
+    completion_tokens: u32,
+    total_tokens: u32,
 }
 
-impl ChatRequest {
-    pub fn new(model: String, messages: Vec<ChatMessages>) -> Self {
-        ChatRequest { model, messages }
+/// # FinishReason
+/// 
+/// the reason why model stopped generating output
+pub enum FinishReason{
+    /// the generation successfully completed
+    Stop,
+    /// the generation length has been reached
+    Length,
+    /// Tool calls is being done
+    ToolCalls,
+    /// Content filter is being performed
+    ContentFilter,
+    /// Any value the provider sends that we do not model yet
+    Other(String),
+}
+
+impl FinishReason {
+    /// Parse a provider `finish_reason` string. This never fails
+    pub fn parse_from_provider(value: &str) -> Self {
+        match value {
+            "stop" => FinishReason::Stop,
+            "length" => FinishReason::Length,
+            "tool_calls" => FinishReason::ToolCalls,
+            "content_filter" => FinishReason::ContentFilter,
+            other => FinishReason::Other(other.to_string()),
+        }
     }
-}
-
-/// # ChatMessageResponse
-/// 
-/// the message returned by the provider
-/// 
-/// content needs to be optional 
-/// cuz provider returns `null` when model emits tool calls
-/// see open ai sdk documentation for more info.
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ChatMessageResponse {
-    pub content : Option<String>
-}
-
-/// # Choice 
-/// 
-/// A single completion choice
-#[derive(Debug, Serialize, Deserialize)]
-pub struct Choice {
-    pub message: ChatMessageResponse,
-    pub finish_reason: Option<String>,
-}
-
-/// # ChatResponse
-/// 
-/// The top level chat completion response.
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ChatResponse {
-    pub choices: Vec<Choice>
 }
