@@ -8,6 +8,7 @@ use crate::types::{FinishReason, Message, Usage};
 use crate::error::Result;
 use async_trait::async_trait;
 use futures::Stream;
+use tokio_util::sync::CancellationToken;
 
 pub struct ModelRequest {
     pub model: String,
@@ -46,9 +47,9 @@ pub trait ModelProvider: Send  + Sync {
     fn name(&self) -> &str;
 
     /// perofrm a single non-streaming completion
-    async fn complete(&self, request: ModelRequest) -> Result<ModelResponse>;
+    async fn complete(&self, request: ModelRequest, cancel: CancellationToken) -> Result<ModelResponse>;
 
     /// Start a streaming completion
     /// yields [`StreamEvent`] until terminal `Done` event.
-    async fn stream(&self, request: ModelRequest) -> Result<ModelStream>;
+    async fn stream(&self, request: ModelRequest, cancel: CancellationToken) -> Result<ModelStream>;
 }

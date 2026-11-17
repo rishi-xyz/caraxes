@@ -30,6 +30,18 @@ pub enum Error {
     /// provider returned response with no choices
     #[error("provider returned an empty response")]
     EmptyResponse,
+
+    /// A provider adapter failed in a way that has no more specific variant
+    #[error("provider error: {0}")]
+    Provider(String),
+
+    /// The request exceeded its configured timeout
+    #[error("request timed out after {secs}s")]
+    Timeout { secs: u64 },
+
+    /// The request was cancelled before it completed
+    #[error("request cancelled")]
+    Cancelled,
 }
 
 /// alias so call can write `Result<T>`.

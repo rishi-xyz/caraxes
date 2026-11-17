@@ -8,20 +8,24 @@
 //! all of these can also be replaced by a open ai compatiable rust sdk but still choosing to implement this for gain control over the flow.
 
 use bytes::Bytes;
-use std::pin::Pin;
+use std::{
+    pin::Pin,
+    time::Duration,
+};
 
 use futures::{Stream, StreamExt, stream::try_unfold};
 use reqwest::header::{AUTHORIZATION, HeaderMap, HeaderValue};
 use serde::{Deserialize, Serialize};
+use tokio_util::sync::CancellationToken;
 
 use crate::{
     error::{
-        Error::{self, Config, EmptyResponse},
-        Result,
-    },
-    model::provider::{ModelProvider, ModelRequest, ModelResponse, ModelStream, StreamEvent},
-    types::{FinishReason, Message, Usage},
+        Error::{self, Cancelled, Config, EmptyResponse}, Result,
+    }, model::provider::{ModelProvider, ModelRequest, ModelResponse, ModelStream, StreamEvent}, types::{FinishReason, Message, Usage},
 };
+
+/// Default request timeout
+const DEFAULT_TIMEOUT: Duration = Duration::from_secs(60);
 
 /// # OpenAICompatibleProvider
 ///
@@ -33,11 +37,11 @@ use crate::{
 /// ```rust
 /// let provider = OpenAICompatibleProvider::new(base_url: "base_url", api_key: env::var("API_KEY"))
 /// ```
-
 pub struct OpenAICompatibleProvider {
     client: reqwest::Client,
     base_url: String,
     api_key: String,
+    request_timeout: Duration
 }
 
 impl OpenAICompatibleProvider {
@@ -46,7 +50,14 @@ impl OpenAICompatibleProvider {
             client: reqwest::Client::new(),
             base_url: base_url.into(),
             api_key: api_key.into(),
+            request_timeout: DEFAULT_TIMEOUT,
         }
+    }
+
+    /// Override the request timeout
+    pub fn with_timeout(mut self, timeout: Duration) -> Self {
+        self.request_timeout = timeout;
+        self
     }
 
     fn endpoint(&self) -> String {
@@ -61,15 +72,25 @@ impl OpenAICompatibleProvider {
         Ok(headers)
     }
 
+    fn timeout_error(&self) -> Error {
+        Error::Timeout { 
+            secs: self.request_timeout.as_secs(),
+        }
+    }
+
+    /// Send a request 
+    /// 
+    /// send will be bounded by the request timeout
     async fn send(&self, payload: &WireRequest<'_>) -> Result<reqwest::Response> {
         let url = self.endpoint();
-        let res = self
+        let fut = self
             .client
             .post(&url)
             .headers(self.auth_headers()?)
             .json(payload)
-            .send()
-            .await?;
+            .send();
+
+        let res = tokio::time::timeout(self.request_timeout, fut).await.map_err(|_| self.timeout_error())??;
 
         let status = res.status();
         if !status.is_success() {
@@ -89,7 +110,7 @@ impl ModelProvider for OpenAICompatibleProvider {
         "openai-compatible"
     }
 
-    async fn complete(&self, request: ModelRequest) -> Result<ModelResponse> {
+    async fn complete(&self, request: ModelRequest, cancel: CancellationToken) -> Result<ModelResponse> {
         let auth_value = HeaderValue::from_str(&format!("Bearer {}", self.api_key))
             .map_err(|err| Config(format!("invalid API key: {err}")))?;
 
@@ -103,33 +124,22 @@ impl ModelProvider for OpenAICompatibleProvider {
             stream_options: None,
         };
 
-        let url = self.endpoint();
+        let res  = tokio::select! {
+            _ = cancel.cancelled() => return Err(Cancelled),
+            res = self.send(&payload) => res?, // this is the new i learnt in rust [error propagation operator]
+        };
 
-        let res = self
-            .client
-            .post(&url)
-            .headers(headers)
-            .json(&payload)
-            .send()
-            .await?;
-
-        let status = res.status();
-
-        if !status.is_success() {
-            let body = res.text().await.unwrap_or_default();
-            return Err(crate::error::Error::Api {
-                status: status.as_u16(),
-                body,
-            });
-        }
-
-        let body = res.text().await?;
+        let body = tokio::select! {
+            _ = cancel.cancelled() => return Err(Cancelled),
+            body  = tokio::time::timeout(self.request_timeout, res.text()) => body.map_err(|_| self.timeout_error())??,
+        };
+        
         let wire: WireResponse = serde_json::from_str(&body)?;
         let response = wire.into_domain()?;
         Ok(response)
     }
 
-    async fn stream(&self, request: ModelRequest) -> Result<ModelStream> {
+    async fn stream(&self, request: ModelRequest, cancel: CancellationToken) -> Result<ModelStream> {
         let payload = WireRequest {
             model: &request.model,
             messages: &request.messages,
@@ -139,8 +149,11 @@ impl ModelProvider for OpenAICompatibleProvider {
             }),
         };
 
-        let res = self.send(&payload).await?;
-        Ok(Box::pin(event_stream(res.bytes_stream())))
+        let res = tokio::select! {
+            _ = cancel.cancelled() => return Err(Cancelled),
+            res = self.send(&payload) => res?,
+        };
+        Ok(Box::pin(event_stream(res.bytes_stream(), cancel)))
     }
 }
 
@@ -217,6 +230,7 @@ impl WireResponse {
 /// State carried between steps of the SSE decoding stream
 struct StreamState<S> {
     bytes: Pin<Box<S>>,
+    cancel: CancellationToken,
     /// bytes recieved but not yet split into complete line, holds buffers
     buffer: Vec<u8>,
     finish_reason: Option<FinishReason>,
@@ -230,7 +244,7 @@ struct StreamState<S> {
 /// Decode a stream of http chunks into a stream of ['StreamEvent'].
 ///
 /// reads only `data` fields
-fn event_stream<S>(bytes: S) -> impl Stream<Item = Result<StreamEvent>>
+fn event_stream<S>(bytes: S, cancel:CancellationToken) -> impl Stream<Item = Result<StreamEvent>>
 where
     S: Stream<Item = reqwest::Result<Bytes>> + Send + 'static,
 {
@@ -238,6 +252,7 @@ where
         // returns ok some , ok none , err
         StreamState {
             bytes: Box::pin(bytes),
+            cancel,
             buffer: Vec::new(),
             finish_reason: None,
             usage: None,
@@ -302,7 +317,14 @@ where
                     return Ok(Some((state.finish(), state)));
                 }
 
-                match state.bytes.next().await {
+                let cancel = state.cancel.clone();
+                let next = state.bytes.next();
+                let item = tokio::select! {
+                    _ = cancel.cancelled() => return Err(Error::Cancelled),
+                    item = next => item,
+                };
+
+                match item {
                     Some(Ok(chunk)) => state.buffer.extend_from_slice(&chunk),
                     Some(Err(err)) => return Err(Error::from(err)),
                     None => state.ended = true,
