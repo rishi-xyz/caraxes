@@ -1,20 +1,26 @@
 use std::io::Write;
 
-use clap::Parser;
 use crate::cli::{CLI, Commands};
-use futures::StreamExt;
-use caraxes_internal::{error::Error::Cancelled, model::{self, provider::{ModelRequest, StreamEvent}}, types::{Message, Role::User}};
 use caraxes_internal::error::Error;
+use caraxes_internal::{
+    error::Error::Cancelled,
+    model::{
+        self,
+        provider::{ModelRequest, StreamEvent},
+    },
+    types::{Message, Role::User},
+};
+use clap::Parser;
+use futures::StreamExt;
 use tokio_util::sync::CancellationToken;
 
 mod cli;
 
-
 #[tokio::main]
-async fn main(){
+async fn main() {
     dotenvy::dotenv().ok();
-    
-    let cli:CLI = cli::CLI::parse();
+
+    let cli: CLI = cli::CLI::parse();
 
     match run(cli).await {
         Ok(()) => {}
@@ -29,7 +35,7 @@ async fn main(){
     }
 }
 
-async fn run(cli:CLI) -> caraxes_internal::error::Result<()> {
+async fn run(cli: CLI) -> caraxes_internal::error::Result<()> {
     match cli.command {
         Commands::Query { query } => {
             let config = model::ModelConfig::from_env();
@@ -38,20 +44,24 @@ async fn run(cli:CLI) -> caraxes_internal::error::Result<()> {
             let cancel = CancellationToken::new();
             ctrl_c_watcher(cancel.clone());
 
-            let request = ModelRequest {
-                model: config.model.clone(),
-                messages: vec![Message::new(User, query)],
-            };
+            let request = ModelRequest::new(config.model.clone(), vec![Message::new(User, query)]);
 
             let mut stream = provider.stream(request, cancel).await?;
 
             while let Some(event) = stream.next().await {
-                match event?{
+                match event? {
                     StreamEvent::Token(token) => {
                         print!("{token}");
                         std::io::stdout().flush().ok();
                     }
-                    StreamEvent::Done { usage, finish_reason } => {
+                    StreamEvent::Done {
+                        usage,
+                        finish_reason,
+                        tool_calls,
+                    } => {
+                        for call in &tool_calls {
+                            eprintln!("[tool call] {} ({})", call.name, call.arguments);
+                        }
                         println!("");
                     }
                 }
@@ -67,7 +77,7 @@ fn ctrl_c_watcher(cancel: CancellationToken) {
             Ok(()) => {
                 cancel.cancel();
             }
-            Err(_) => () 
+            Err(_) => (),
         }
     });
 }
