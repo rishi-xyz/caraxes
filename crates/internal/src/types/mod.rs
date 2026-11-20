@@ -48,8 +48,12 @@ impl ToolCall {
 
     /// Decode [`arguments`](Self::arguments) into a JSON value.
     ///
+    /// Treats empty/whitespace arguments as an empty object for robustness.
     /// Fails when model produced args that are not valid JSON.
     pub fn parse_arguments(&self) -> Result<serde_json::Value, serde_json::Error> {
+        if self.arguments.trim().is_empty() {
+            return Ok(serde_json::Value::Object(Default::default()));
+        }
         serde_json::from_str(&self.arguments)
     }
 }

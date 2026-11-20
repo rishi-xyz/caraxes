@@ -191,7 +191,7 @@ impl WireRequest {
 struct WireMessage {
     #[serde(default = "assitant_role")]
     role: Role,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     content: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tool_calls: Vec<WireToolCall>,
@@ -217,6 +217,7 @@ fn assitant_role() -> Role {
 #[derive(Debug, Serialize, Deserialize)]
 struct WireToolCall {
     id: String,
+    #[serde(rename ="type", default = "tool_type")]
     kind: String,
     function: WireFunctionCall,
 }
@@ -247,6 +248,7 @@ impl WireToolCall {
 #[derive(Debug, Serialize, Deserialize)]
 struct WireFunctionCall {
     name: String,
+    #[serde(default, rename = "arguments")]
     args: String,
 }
 
@@ -261,44 +263,57 @@ struct WireStreamingOptions {
 
 #[derive(Debug, Serialize, Deserialize)]
 struct WireResponse {
+    #[serde(default)]
     choices: Vec<WireChoice>,
+    #[serde(default)]
     usage: Option<Usage>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 struct WireChoice {
     message: WireMessage,
+    #[serde(default)]
     finish_reason: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
 struct WireStreamChunk {
+    #[serde(default)]
     choices: Vec<WireStreamChoice>,
+    #[serde(default)]
     usage: Option<Usage>,
 }
 
 #[derive(Debug, Deserialize)]
 struct WireStreamChoice {
+    #[serde(default)]
     delta: WireDelta,
+    #[serde(default)]
     finish_reason: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Default)]
 struct WireDelta {
+    #[serde(default)]
     content: Option<String>,
+    #[serde(default)]
     tool_calls: Vec<WireToolCallDelta>,
 }
 
 #[derive(Debug, Deserialize, Default)]
 struct WireToolCallDelta {
     index: u32,
+    #[serde(default)]
     id: Option<String>,
+    #[serde(default)]
     function: Option<WireFunctionDelta>,
 }
 
 #[derive(Debug, Deserialize, Default)]
 struct WireFunctionDelta {
+    #[serde(default)]
     name: Option<String>,
+    #[serde(rename = "arguments", default)]
     args: Option<String>,
 }
 
@@ -320,7 +335,7 @@ impl From<&ToolDefinition> for WireTool {
             function: WireToolFunction {
                 name: tool.name.clone(),
                 description: tool.description.clone(),
-                params: tool.params.clone(),
+                parameters: tool.params.clone(),
             },
         }
     }
@@ -330,7 +345,7 @@ impl From<&ToolDefinition> for WireTool {
 struct WireToolFunction {
     name: String,
     description: String,
-    params: serde_json::Value,
+    parameters: serde_json::Value,
 }
 
 impl WireResponse {

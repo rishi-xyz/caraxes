@@ -42,6 +42,10 @@ pub enum Error {
     /// The request was cancelled before it completed
     #[error("request cancelled")]
     Cancelled,
+
+    /// An os system error for input output
+    #[error("I/O error: {0}")]
+    Io(#[from] std::io::Error)
 }
 
 /// alias so call can write `Result<T>`.
