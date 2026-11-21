@@ -2,7 +2,7 @@
 //!
 //! This module have tool definition, registry and result
 
-pub mod file_system;
+pub mod read_file;
 
 use std::sync::Arc;
 
@@ -114,7 +114,7 @@ impl ToolRegistry {
 }
 
 /// outcome of the tool
-#[derive(Debug, Clone, PartialEq, )]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ToolResult {
     pub tool_call_id: String,
     pub content: String,

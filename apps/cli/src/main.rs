@@ -3,8 +3,9 @@ use std::sync::Arc;
 
 use crate::cli::{CLI, Commands};
 use caraxes_internal::error::{Error, Result};
+use caraxes_internal::exec::ExecutionRuntime;
 use caraxes_internal::model::provider::ModelProvider;
-use caraxes_internal::tools::file_system::ReadFile;
+use caraxes_internal::tools::read_file::ReadFile;
 use caraxes_internal::tools::{ToolRegistry, ToolResult};
 use caraxes_internal::types::ToolCall;
 use caraxes_internal::{
@@ -17,6 +18,7 @@ use caraxes_internal::{
 };
 use clap::Parser;
 use futures::StreamExt;
+use tokio_util::io::simplex::new;
 use tokio_util::sync::CancellationToken;
 
 mod cli;
@@ -51,8 +53,10 @@ async fn run(cli: CLI) -> Result<()> {
             let cancel = CancellationToken::new();
             ctrl_c_watcher(cancel.clone());
 
+            let runtime = Arc::new(ExecutionRuntime::open(std::env::current_dir()?)?);
+
             let mut registry = ToolRegistry::new();
-            registry.register(Arc::new(ReadFile::new(std::env::current_dir()?)));
+            registry.register(Arc::new(ReadFile::new(runtime.clone())));
             let tools = registry.definitions();
 
             let mut messages = vec![Message::new(User, query)];

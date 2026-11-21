@@ -1,11 +1,9 @@
 //! Creating some generic and common error types and instances
 
-use thiserror::Error; 
-
-
+use thiserror::Error;
 
 /// Errors produced by the Caraxes internal core
-#[derive(Debug, Error, )]
+#[derive(Debug, Error)]
 pub enum Error {
     /// A required API key is missing
     #[error("missing API key: {0}")]
@@ -21,7 +19,7 @@ pub enum Error {
 
     /// Provider ans with non -success status code
     #[error("API returned status {status}:{body}")]
-    Api{status: u16, body:String},
+    Api { status: u16, body: String },
 
     /// body couldn't be decoded
     #[error("failed to decode response: {0}")]
@@ -43,9 +41,18 @@ pub enum Error {
     #[error("request cancelled")]
     Cancelled,
 
+    /// model supplied a abosulte path, we use workspace realative model //NOTE! : might need to change this for containers / pods later on.
+    #[error("absolute paths are not allowed: {0}")]
+    AbsolutePath(String),
+
+    /// The underlying fs or process op failed
     /// An os system error for input output
     #[error("I/O error: {0}")]
-    Io(#[from] std::io::Error)
+    Io(#[from] std::io::Error),
+
+    ///path outside the workspace
+    #[error("path escapes the workspace: {0}")]
+    Escape(String),
 }
 
 /// alias so call can write `Result<T>`.
