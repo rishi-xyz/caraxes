@@ -10,6 +10,7 @@ use crate::types::{Message, ToolCall};
 use async_trait::async_trait;
 use serde::Serialize;
 use serde_json::Value;
+use tracing::{debug, instrument};
 
 /// A tool the model is allowed to ask for
 ///
@@ -100,8 +101,11 @@ impl ToolRegistry {
         self.tools.is_empty()
     }
 
+    #[instrument(skip_all)]
     pub async fn execute(&self, call: &ToolCall) -> ToolResult {
-        match self
+        debug!(tool = %call.name, id = %call.id, "dispatching tool call");
+
+        let result = match self
             .tools
             .iter()
             .rev()
@@ -109,7 +113,10 @@ impl ToolRegistry {
         {
             Some(tool) => tool.executor.execute(call).await,
             None => ToolResult::error(call.id.as_str(), format!("unknown tool: {}", call.name)),
-        }
+        };
+
+        debug!(tool = %call.name, is_error = result.is_error, "tool call returned");
+        result
     }
 }
 

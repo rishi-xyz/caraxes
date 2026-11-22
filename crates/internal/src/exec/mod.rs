@@ -59,6 +59,8 @@ fn canonicalize_path(path: &Path) -> IOResult<PathBuf> {
                 for component in tail.iter().rev() {
                     canonical.push(component);
                 }
+
+                return Ok(canonical);
             }
             Err(err) => {
                 let Some(parent) = current.parent() else {

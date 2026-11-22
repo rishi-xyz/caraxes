@@ -10,3 +10,10 @@ dotenvy = "0.15.7"
 futures = "0.3.34"
 tokio = { version = "1.54.1", features = ["macros", "rt-multi-thread", "signal"] }
 tokio-util = "0.7.20"
+tracing = { workspace = true }
+tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt"] }
+
+[features]
+default = ["dev-logs"]
+# env-filter (and its regex stack) is only needed for on-demand RUST_LOG debugging.
+dev-logs = ["tracing-subscriber/env-filter"]

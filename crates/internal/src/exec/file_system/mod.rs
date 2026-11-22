@@ -1,15 +1,20 @@
 use std::path::PathBuf;
 
 use tokio::fs::{create_dir_all, read_to_string, remove_file, write};
+use tracing::{debug, instrument};
 
 use super::ExecutionRuntime;
 use crate::error::Result;
 
 impl ExecutionRuntime {
     // read a file
+    #[instrument(skip_all)]
     pub async fn read_file(&self, path: &str) -> Result<String> {
         let full = self.workspace().resolve(path)?;
-        Ok(read_to_string(full).await?)
+        debug!(%path, resolved = %full.display(), "reading file");
+        let contents = read_to_string(full).await?;
+        debug!(bytes = contents.len(), "file read complete");
+        Ok(contents)
     }
     // write a file
     pub async fn write_file(&self, path: &str, contents: impl AsRef<[u8]>) -> Result<()> {

@@ -14,6 +14,7 @@ use futures::{Stream, StreamExt, stream::try_unfold};
 use reqwest::header::{AUTHORIZATION, HeaderMap, HeaderValue};
 use serde::{Deserialize, Serialize};
 use tokio_util::sync::CancellationToken;
+use tracing::{debug, instrument, trace, warn};
 
 use crate::{
     error::{
@@ -82,8 +83,11 @@ impl OpenAICompatibleProvider {
     /// Send a request
     ///
     /// send will be bounded by the request timeout
+    #[instrument(skip_all)]
     async fn send(&self, payload: &WireRequest) -> Result<reqwest::Response> {
         let url = self.endpoint();
+        debug!(%url, model = %payload.model, "sending completion request");
+
         let fut = self
             .client
             .post(&url)
@@ -93,10 +97,16 @@ impl OpenAICompatibleProvider {
 
         let res = tokio::time::timeout(self.request_timeout, fut)
             .await
-            .map_err(|_| self.timeout_error())??;
+            .map_err(|_| {
+                warn!(secs = self.request_timeout.as_secs(), "request timed out");
+                self.timeout_error()
+            })??;
 
         let status = res.status();
+        debug!(status = %status, "response received");
+
         if !status.is_success() {
+            debug!(status = %status, "reading error response body");
             let body = res.text().await.unwrap_or_default();
             return Err(crate::error::Error::Api {
                 status: status.as_u16(),
@@ -113,11 +123,14 @@ impl ModelProvider for OpenAICompatibleProvider {
         "openai-compatible"
     }
 
+    #[instrument(skip_all)]
     async fn complete(
         &self,
         request: ModelRequest,
         cancel: CancellationToken,
     ) -> Result<ModelResponse> {
+        debug!(model = %request.model, "non-streaming completion started");
+
         let auth_value = HeaderValue::from_str(&format!("Bearer {}", self.api_key))
             .map_err(|err| Config(format!("invalid API key: {err}")))?;
 
@@ -138,20 +151,28 @@ impl ModelProvider for OpenAICompatibleProvider {
 
         let wire: WireResponse = serde_json::from_str(&body)?;
         let response = wire.into_domain()?;
+        debug!(
+            ?response.finish_reason,
+            tool_calls = response.tool_calls.len(),
+            "non-streaming completion finished"
+        );
         Ok(response)
     }
 
+    #[instrument(skip_all)]
     async fn stream(
         &self,
         request: ModelRequest,
         cancel: CancellationToken,
     ) -> Result<ModelStream> {
+        debug!(model = %request.model, "streaming completion started");
         let payload = WireRequest::from_domain(&request, true);
 
         let res = tokio::select! {
             _ = cancel.cancelled() => return Err(Cancelled),
             res = self.send(&payload) => res?,
         };
+        debug!("model stream established");
         Ok(Box::pin(event_stream(res.bytes_stream(), cancel)))
     }
 }
@@ -217,7 +238,7 @@ fn assitant_role() -> Role {
 #[derive(Debug, Serialize, Deserialize)]
 struct WireToolCall {
     id: String,
-    #[serde(rename ="type", default = "tool_type")]
+    #[serde(rename = "type", default = "tool_type")]
     kind: String,
     function: WireFunctionCall,
 }
@@ -428,14 +449,17 @@ where
                     let line: Vec<u8> = state.buffer.drain(..=newline).collect(); // collect vec elem till that point
                     let line = String::from_utf8_lossy(&line); // convert to string , web search all these functions btw 
                     let line = line.trim_end_matches(['\r', '\n']); // get the line till ends \r , \n
+                    trace!(line = %line, "sse line decoded");
 
                     if let Some(data) = line.strip_prefix("data:") {
                         // since every text starts with data we are going remove that
                         let data = data.trim_start(); // trim the data string
+                        trace!(bytes = data.len(), "sse event data received");
 
                         //see for done, if found emmit as true and return
                         if data == "[DONE]" {
                             //see sdk and refernces for these , was also there in postman responses at end of stream
+                            debug!("[DONE] received; finishing stream");
                             state.emitted_done = true;
                             return Ok(Some((state.finish(), state)));
                         }
@@ -470,6 +494,7 @@ where
                         }
 
                         if let Some(token) = token {
+                            trace!(chars = token.len(), "token decoded from sse");
                             return Ok(Some((StreamEvent::Token(token), state)));
                         }
                     }
@@ -478,6 +503,7 @@ where
                 }
                 // No newline or complete line left in buffer
                 if state.ended {
+                    debug!("sse byte stream ended");
                     state.emitted_done = true;
                     return Ok(Some((state.finish(), state)));
                 }
@@ -485,12 +511,18 @@ where
                 let cancel = state.cancel.clone();
                 let next = state.bytes.next();
                 let item = tokio::select! {
-                    _ = cancel.cancelled() => return Err(Error::Cancelled),
+                    _ = cancel.cancelled() => {
+                        debug!("sse stream cancelled");
+                        return Err(Error::Cancelled)
+                    },
                     item = next => item,
                 };
 
                 match item {
-                    Some(Ok(chunk)) => state.buffer.extend_from_slice(&chunk),
+                    Some(Ok(chunk)) => {
+                        trace!(bytes = chunk.len(), "sse chunk received");
+                        state.buffer.extend_from_slice(&chunk)
+                    }
                     Some(Err(err)) => return Err(Error::from(err)),
                     None => state.ended = true,
                 }

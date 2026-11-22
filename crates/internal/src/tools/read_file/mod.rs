@@ -8,6 +8,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use serde_json::json;
+use tracing::{debug, instrument};
 
 use crate::{
     error::Error::Io,
@@ -45,22 +46,37 @@ impl ToolExecutor for ReadFile {
         )
     }
 
+    #[instrument(skip_all)]
     async fn execute(&self, call: &ToolCall) -> ToolResult {
+        debug!(id = %call.id, "read_file tool invoked");
+
         let args = match call.parse_arguments() {
             Ok(args) => args,
             Err(err) => {
+                debug!(error = %err, "invalid read_file arguments");
                 return ToolResult::error(call.id.as_str(), format!("invalid arguments: {err}"));
             }
         };
 
         let Some(path) = args.get("path").and_then(|value| value.as_str()) else {
+            debug!("read_file missing path argument");
             return ToolResult::error(call.id.as_str(), "missing required arguments: path");
         };
 
+        debug!(%path, "reading file from workspace");
         match self.runtime.read_file(path).await {
-            Ok(contents) => ToolResult::success(call.id.as_str(), contents),
-            Err(Io(err)) => ToolResult::error(call.id.as_str(), err.to_string()),
-            Err(err) => ToolResult::error(call.id.as_str(), err.to_string()),
+            Ok(contents) => {
+                debug!(%path, chars = contents.len(), "read_file succeeded");
+                ToolResult::success(call.id.as_str(), contents)
+            }
+            Err(Io(err)) => {
+                debug!(%path, error = %err, "read_file failed");
+                ToolResult::error(call.id.as_str(), err.to_string())
+            }
+            Err(err) => {
+                debug!(%path, error = %err, "read_file failed");
+                ToolResult::error(call.id.as_str(), err.to_string())
+            }
         }
     }
 }

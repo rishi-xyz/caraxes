@@ -26,7 +26,7 @@ impl ModelRequest {
         }
     }
 
-    pub fn with_tools(mut self, tools: Vec<ToolDefinition>) ->Self {
+    pub fn with_tools(mut self, tools: Vec<ToolDefinition>) -> Self {
         self.tools = tools;
         self
     }

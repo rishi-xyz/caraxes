@@ -3,6 +3,8 @@ pub mod provider;
 
 use std::{env, time::Duration};
 
+use tracing::debug;
+
 use crate::error::{Error::MissingApiKey, Result};
 use crate::model::openai::OpenAICompatibleProvider;
 use crate::model::provider::ModelProvider;
@@ -47,6 +49,13 @@ impl ModelConfig {
 }
 
 pub fn build_provider(config: &ModelConfig) -> Result<Box<dyn ModelProvider>> {
+    debug!(
+        model = %config.model,
+        base_url = %config.base_url,
+        timeout_secs = config.timeout.as_secs(),
+        "building model provider"
+    );
+
     match config.provider {
         ProviderKind::OpenAICompatible => {
             let api_key = env::var(&config.api_key_env)

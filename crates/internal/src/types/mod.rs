@@ -114,6 +114,7 @@ pub struct Usage {
 /// # FinishReason
 ///
 /// the reason why model stopped generating output
+#[derive(Debug)]
 pub enum FinishReason {
     /// the generation successfully completed
     Stop,
