@@ -4,6 +4,7 @@
 //! every tool should go through this mod (unless explicit in container and set by user (this will be done later))
 
 pub mod file_system;
+pub mod process;
 
 use crate::error::{
     Error::{AbsolutePath, Escape},

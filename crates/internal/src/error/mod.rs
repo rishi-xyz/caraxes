@@ -1,5 +1,7 @@
 //! Creating some generic and common error types and instances
 
+use std::time::Duration;
+
 use thiserror::Error;
 
 /// Errors produced by the Caraxes internal core
@@ -53,6 +55,22 @@ pub enum Error {
     ///path outside the workspace
     #[error("path escapes the workspace: {0}")]
     Escape(String),
+
+    /// A process could not be started (missing binary, no permission, ... etc)
+    #[error("failed to spawn {program}:{source}")]
+    SpawnError {
+        program: String,
+        #[source]
+        source: std::io::Error,
+    },
+
+    /// A process ran longer than its deadline and was killed.
+    #[error("command timed out after {0:?}")]
+    ProcessTimeout(Duration),
+
+    /// A process was cancelled and killed
+    #[error("command was cancelled")]
+    ProcessCancelled,
 }
 
 /// alias so call can write `Result<T>`.

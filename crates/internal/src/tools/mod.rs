@@ -3,6 +3,7 @@
 //! This module have tool definition, registry and result
 
 pub mod read_file;
+pub mod run_command;
 
 use std::sync::Arc;
 

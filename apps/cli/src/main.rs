@@ -5,8 +5,12 @@ use crate::cli::{CLI, Commands};
 use caraxes_internal::error::{Error::Cancelled, Result};
 use caraxes_internal::exec::ExecutionRuntime;
 use caraxes_internal::model::provider::ModelProvider;
-use caraxes_internal::tools::read_file::ReadFile;
-use caraxes_internal::tools::{ToolRegistry, ToolResult};
+use caraxes_internal::tools::{
+    ToolRegistry, 
+    ToolResult,
+    read_file::ReadFile,
+    run_command::RunCommand
+};
 use caraxes_internal::types::ToolCall;
 use caraxes_internal::{
     model::{
@@ -95,6 +99,7 @@ async fn run(cli: CLI) -> Result<()> {
 
             let mut registry = ToolRegistry::new();
             registry.register(Arc::new(ReadFile::new(runtime.clone())));
+            registry.register(Arc::new(RunCommand::new(runtime.clone())));
             let tools = registry.definitions();
 
             let mut messages = vec![Message::new(User, query)];
